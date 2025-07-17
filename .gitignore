@@ -1,0 +1,8 @@
+*.pyc 
+__pycache__/ 
+autofixer-env/ 
+data/*.index 
+data/*.pkl 
+*.bak 
+fix_log.txt 
+.env 
