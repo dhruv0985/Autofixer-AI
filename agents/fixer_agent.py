@@ -33,6 +33,30 @@ def ask_ollama(prompt: str, max_retries: int = 3) -> str:
                 return ""
     return ""
 
+
+def extract_function_named(text: str, func_name: str) -> str:
+    """
+    Extract ONLY the function named `func_name` from LLM output.
+    Uses AST for robust parsing.
+    """
+    import ast
+
+    try:
+        tree = ast.parse(text)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == func_name:
+                lines = text.splitlines()
+                start = node.lineno - 1
+                end = max(child.lineno for child in ast.walk(node) if hasattr(child, "lineno"))
+                return "\n".join(lines[start:end])
+    except SyntaxError:
+        pass
+
+    # fallback — if AST parse failed, return full
+    return text.strip()
+
+
+
 def extract_python_code(text: str) -> str:
     """Extract valid Python code from LLM output with improved parsing."""
     if not text.strip():
@@ -152,8 +176,18 @@ def generate_fix(instruction: str, main_function: str, helper_functions: List[Di
     
     # Check if instruction is already a full prompt (from planner)
     if "You are an expert Python" in instruction or "INSTRUCTIONS:" in instruction:
-        # This is a full prompt from the planner
-        prompt = instruction
+        # This is a full prompt from the planner - enhance it with strict rules
+        enhanced_prompt = instruction + """
+
+CRITICAL RULES:
+- Return ONLY the target function that needs to be fixed
+- Do NOT include helper functions unless they also need fixing
+- Do NOT include main() function unless it's the target
+- Do NOT duplicate existing functions
+- Each function should appear only once in your response
+- Return minimal, focused code changes
+"""
+        prompt = enhanced_prompt
     else:
         # Build a simple prompt for backward compatibility
         helpers_text = "\n\n".join([
@@ -175,8 +209,11 @@ Fix the following function according to the instruction.
 # Fix instruction:
 {instruction}
 
-RULES:
-- Return ONLY the corrected Python function(s)
+CRITICAL RULES:
+- Return ONLY the corrected target function
+- Do NOT include helper functions unless they also need fixing
+- Do NOT include main() function unless it's the target
+- Do NOT duplicate existing functions
 - Keep original function signatures
 - Make minimal changes
 - No explanations or comments
